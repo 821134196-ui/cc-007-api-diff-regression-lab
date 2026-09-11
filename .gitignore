@@ -1,0 +1,10 @@
+bin/
+obj/
+node_modules/
+dist/
+.vite/
+TestResults/
+playwright-report/
+*.user
+.vs/
+*.tsbuildinfo

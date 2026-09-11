@@ -1,0 +1,93 @@
+name: regression-lab
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: regression_lab
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab -d regression_lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [labnet]
+
+  # ---- two controllable fixture target services, one image, two personalities ----
+  baseline:
+    build:
+      context: .
+      dockerfile: fixtures/RegressionLab.Fixture/Dockerfile
+    environment:
+      FIXTURE_MODE: baseline
+      EXPECTED_API_KEY: shared-demo-key-123456
+    networks: [labnet]
+
+  candidate:
+    build:
+      context: .
+      dockerfile: fixtures/RegressionLab.Fixture/Dockerfile
+    environment:
+      FIXTURE_MODE: candidate
+      # Different expected key -> the secret-header scenario fails auth on candidate.
+      EXPECTED_API_KEY: candidate-only-key-987654
+    networks: [labnet]
+
+  api:
+    build:
+      context: .
+      dockerfile: src/RegressionLab.Api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      baseline:
+        condition: service_started
+      candidate:
+        condition: service_started
+    environment:
+      ConnectionStrings__LabDb: "Host=postgres;Database=regression_lab;Username=lab;Password=lab"
+      BASELINE_URL: "http://baseline:8080"
+      CANDIDATE_URL: "http://candidate:8080"
+      # Secret values live ONLY here, server-side. Scenarios reference them by name.
+      RLAB_SECRET_DEMO_API_KEY: "shared-demo-key-123456"
+      SECRET_NAMES: "RLAB_SECRET_DEMO_API_KEY"
+    ports:
+      - "8080:8080"
+    networks: [labnet]
+
+  # ---- backend unit tests (xUnit): rules, concurrency/cancel, secrets, unreachable ----
+  backend-tests:
+    build:
+      context: .
+      dockerfile: tests/RegressionLab.Tests/Dockerfile
+    profiles: ["test"]
+    command: ["dotnet", "test", "tests/RegressionLab.Tests/RegressionLab.Tests.csproj", "--logger", "console"]
+
+  # ---- browser main-flow tests (not part of the default app; opt-in via profile) ----
+  e2e:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile
+    profiles: ["test"]
+    depends_on:
+      api:
+        condition: service_healthy
+      baseline:
+        condition: service_started
+      candidate:
+        condition: service_started
+    environment:
+      APP_BASE_URL: "http://api:8080"
+      BASELINE_URL: "http://baseline:8080"
+      CANDIDATE_URL: "http://candidate:8080"
+    networks: [labnet]
+
+volumes:
+  pgdata:
+
+networks:
+  labnet:
+    driver: bridge

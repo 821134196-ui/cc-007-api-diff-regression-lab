@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.vite/
+**/TestResults/
+**/playwright-report/
+**/.playwright-mcp/
+.git/
+*.md
+tests/e2e/node_modules/
